@@ -1,0 +1,113 @@
+{
+  "node": {
+    "00eed21a90b282745806344ec267ae4c35a8ce10c8": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "getCanteenData",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "getCanteenData",
+      "filename": "app/actions.ts"
+    },
+    "40a960843d601f5382316d97202e97a7464148bfb1": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "createProductAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "createProductAction",
+      "filename": "app/actions.ts"
+    },
+    "6000fe24924a94b719ac8e7c8a69c0e40b56084ba5": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "closeTabAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "closeTabAction",
+      "filename": "app/actions.ts"
+    },
+    "6045d906da572d5d12054418eaaa57905e69798eef": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "updateProductStockAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "updateProductStockAction",
+      "filename": "app/actions.ts"
+    },
+    "60c9917bf129e70ab9b88654725963d705d19342ab": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "addToTabAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "addToTabAction",
+      "filename": "app/actions.ts"
+    },
+    "705aacfea2eae3696de749818fe5303453de5620a6": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "chargeStudentWalletAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "chargeStudentWalletAction",
+      "filename": "app/actions.ts"
+    },
+    "7068b32c4704781fc67383b340886dc4b57b09b23b": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "processDirectSaleAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "processDirectSaleAction",
+      "filename": "app/actions.ts"
+    },
+    "70fd40fcebabf597a566c3b61b031d5776fbb42b9c": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "depositStudentWalletAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "depositStudentWalletAction",
+      "filename": "app/actions.ts"
+    },
+    "78eb06f5c1e15a768608684237d510e103c5113387": {
+      "workers": {
+        "app/page": {
+          "moduleId": 57526,
+          "async": false,
+          "exportedName": "createTabAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "createTabAction",
+      "filename": "app/actions.ts"
+    }
+  },
+  "edge": {}
+}

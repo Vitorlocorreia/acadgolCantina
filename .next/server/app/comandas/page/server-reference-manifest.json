@@ -1,0 +1,41 @@
+{
+  "node": {
+    "009502ef697e9c69fb488f561445b0cf80c032a392": {
+      "workers": {
+        "app/comandas/page": {
+          "moduleId": 10717,
+          "async": false,
+          "exportedName": "getTabsList",
+          "filename": "app/comandas/actions.ts"
+        }
+      },
+      "exportedName": "getTabsList",
+      "filename": "app/comandas/actions.ts"
+    },
+    "600ae966f6a5b607adb8b59ee613921238cbe24da5": {
+      "workers": {
+        "app/comandas/page": {
+          "moduleId": 10717,
+          "async": false,
+          "exportedName": "removeTabItemAction",
+          "filename": "app/comandas/actions.ts"
+        }
+      },
+      "exportedName": "removeTabItemAction",
+      "filename": "app/comandas/actions.ts"
+    },
+    "6000fe24924a94b719ac8e7c8a69c0e40b56084ba5": {
+      "workers": {
+        "app/comandas/page": {
+          "moduleId": 10717,
+          "async": false,
+          "exportedName": "closeTabAction",
+          "filename": "app/actions.ts"
+        }
+      },
+      "exportedName": "closeTabAction",
+      "filename": "app/actions.ts"
+    }
+  },
+  "edge": {}
+}

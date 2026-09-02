@@ -1,0 +1,17 @@
+{
+  "node": {
+    "00e1549e2e0f0c4a1f7ae6d725e91d3ba207eb903a": {
+      "workers": {
+        "app/caixa/page": {
+          "moduleId": 90407,
+          "async": false,
+          "exportedName": "getSalesData",
+          "filename": "app/caixa/actions.ts"
+        }
+      },
+      "exportedName": "getSalesData",
+      "filename": "app/caixa/actions.ts"
+    }
+  },
+  "edge": {}
+}
