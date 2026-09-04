@@ -2,6 +2,8 @@ import { ClipboardList } from 'lucide-react'
 import { getTabsList } from './actions'
 import { ComandasClient } from './comandas-client'
 
+export const dynamic = 'force-dynamic'
+
 export default async function ComandasPage() {
   const tabs = await getTabsList()
 

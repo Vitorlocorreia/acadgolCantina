@@ -2,6 +2,8 @@ import { TrendingUp } from 'lucide-react'
 import { getSalesData } from './actions'
 import { CaixaClient } from './caixa-client'
 
+export const dynamic = 'force-dynamic'
+
 export default async function CaixaPage() {
   const sales = await getSalesData()
 

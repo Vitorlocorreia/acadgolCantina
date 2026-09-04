@@ -2,6 +2,8 @@ import { Wallet } from 'lucide-react'
 import { getStudentsWalletsList } from './actions'
 import { CarteiraClient } from './carteira-client'
 
+export const dynamic = 'force-dynamic'
+
 export default async function CarteiraAlunosPage() {
   const { students, transactions } = await getStudentsWalletsList()
 

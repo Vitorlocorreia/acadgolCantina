@@ -2,6 +2,8 @@ import { ShoppingCart } from 'lucide-react'
 import { getCanteenData } from './actions'
 import { PdvClient } from './pdv-client'
 
+export const dynamic = 'force-dynamic'
+
 export default async function PdvPage() {
   const { products, openTabs, students } = await getCanteenData()
 
