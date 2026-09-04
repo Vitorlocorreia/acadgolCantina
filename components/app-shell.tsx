@@ -60,6 +60,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  // Rota pública de comanda compartilhada na quadra: renderiza sem sidebar/shell
+  if (pathname.startsWith('/comanda/')) {
+    return <main>{children}</main>
+  }
+
   useEffect(() => {
     const saved = localStorage.getItem('acadgol_cantina_sidebar_collapsed')
     if (saved !== null) {
