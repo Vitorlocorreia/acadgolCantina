@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Printer, Send, CheckCircle2, Loader2, X, Receipt, Smartphone } from 'lucide-react'
 import { sendReceiptWhatsAppAction } from '@/app/actions'
 
@@ -50,10 +50,20 @@ function getPaymentMethodLabel(method: string) {
 }
 
 export function ThermalReceiptModal({ isOpen, onClose, data }: Props) {
-  const [phone, setPhone] = useState(data?.guardianPhone || '')
+  const [phone, setPhone] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [sendSuccess, setSendSuccess] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (data?.guardianPhone) {
+      setPhone(data.guardianPhone)
+    } else {
+      setPhone('')
+    }
+    setSendSuccess(false)
+    setErrorMsg(null)
+  }, [data])
 
   if (!isOpen || !data) return null
 
