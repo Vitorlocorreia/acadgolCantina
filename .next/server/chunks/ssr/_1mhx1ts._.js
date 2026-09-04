@@ -1,3 +1,0 @@
-module.exports=[6334,a=>{"use strict";var b=a.i(37936),c=a.i(39916);async function d(){let a=(0,c.createAdminClient)(),{data:b,error:d}=await a.from("canteen_sales").select("*").order("created_at",{ascending:!1}).limit(100);return d?(console.error("Erro ao buscar vendas:",d),[]):b??[]}(0,a.i(13095).ensureServerEntryExports)([d]),(0,b.registerServerReference)(d,"00e1549e2e0f0c4a1f7ae6d725e91d3ba207eb903a",null),a.s(["getSalesData",0,d])},90407,a=>{"use strict";var b=a.i(6334);a.s([],9250),a.i(9250),a.s(["00e1549e2e0f0c4a1f7ae6d725e91d3ba207eb903a",()=>b.getSalesData],90407)}];
-
-//# sourceMappingURL=_1mhx1ts._.js.map

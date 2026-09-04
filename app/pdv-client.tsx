@@ -20,6 +20,8 @@ import {
   Coffee,
   Sparkles,
   Check,
+  ShieldAlert,
+  Gauge,
 } from 'lucide-react'
 import {
   processDirectSaleAction,
@@ -27,6 +29,8 @@ import {
   chargeStudentWalletAction,
   createTabAction,
 } from './actions'
+import { playBeep, playCashRegister, playAlert } from '@/lib/audio/sound-effects'
+import { ThermalReceiptModal, ReceiptData } from '@/components/thermal-receipt-modal'
 
 interface CartItem {
   productId: string
@@ -60,6 +64,7 @@ export function PdvClient({ products, openTabs, students }: Props) {
   const [search, setSearch] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null)
 
   // Modal states
   const [checkoutMode, setCheckoutMode] = useState<'none' | 'balcao' | 'comanda' | 'aluno'>('none')
@@ -69,8 +74,9 @@ export function PdvClient({ products, openTabs, students }: Props) {
   const [selectedStudentId, setSelectedStudentId] = useState<string>(students[0]?.id || '')
   const [studentSearch, setStudentSearch] = useState('')
 
-  // Add to cart
+  // Add to cart com Beep
   const addToCart = (prod: any) => {
+    playBeep()
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === prod.id)
       if (existing) {
@@ -92,6 +98,7 @@ export function PdvClient({ products, openTabs, students }: Props) {
   }
 
   const updateQuantity = (productId: string, delta: number) => {
+    playBeep()
     setCart((prev) =>
       prev
         .map((i) => {
@@ -123,13 +130,30 @@ export function PdvClient({ products, openTabs, students }: Props) {
   const handleFinalizeBalcao = (paymentMethod: string) => {
     if (cart.length === 0) return
     setFeedback(null)
+    const currentCart = [...cart]
+    const currentTotal = cartTotal
+
     startTransition(async () => {
-      const res = await processDirectSaleAction(cart, paymentMethod, 'Venda Rápida Balcão')
+      const res = await processDirectSaleAction(currentCart, paymentMethod, 'Venda Rápida Balcão')
       if (res.success) {
-        setFeedback({ type: 'success', message: `Venda de ${fmt(cartTotal)} finalizada com sucesso via ${paymentMethod.toUpperCase()}!` })
+        playCashRegister()
+        setReceiptData({
+          orderNumber: Math.floor(1000 + Math.random() * 9000),
+          clientName: 'Consumidor Balcão',
+          items: currentCart.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            totalPrice: i.quantity * i.unitPrice,
+          })),
+          totalAmount: currentTotal,
+          paymentMethod: paymentMethod,
+        })
+        setFeedback({ type: 'success', message: `Venda de ${fmt(currentTotal)} finalizada com sucesso via ${paymentMethod.toUpperCase()}!` })
         setCart([])
         setCheckoutMode('none')
       } else {
+        playAlert()
         setFeedback({ type: 'error', message: res.error || 'Erro ao processar venda.' })
       }
     })
@@ -152,17 +176,20 @@ export function PdvClient({ products, openTabs, students }: Props) {
       }
 
       if (!targetTabId) {
+        playAlert()
         setFeedback({ type: 'error', message: 'Selecione ou crie uma comanda.' })
         return
       }
 
       const res = await addToTabAction(targetTabId, cart)
       if (res.success) {
+        playCashRegister()
         setFeedback({ type: 'success', message: `Itens adicionados à comanda da pelada com sucesso!` })
         setCart([])
         setCheckoutMode('none')
         setNewTabName('')
       } else {
+        playAlert()
         setFeedback({ type: 'error', message: 'Erro ao lançar na comanda.' })
       }
     })
@@ -172,9 +199,30 @@ export function PdvClient({ products, openTabs, students }: Props) {
   const handleFinalizeAluno = () => {
     if (cart.length === 0 || !selectedStudentId) return
     setFeedback(null)
+    const currentCart = [...cart]
+    const currentTotal = cartTotal
+    const targetStudent = students.find((s) => s.id === selectedStudentId)
+
     startTransition(async () => {
-      const res = await chargeStudentWalletAction(selectedStudentId, cart, cartTotal)
+      const res = await chargeStudentWalletAction(selectedStudentId, currentCart, currentTotal)
       if (res.success) {
+        playCashRegister()
+        const guardian = Array.isArray(targetStudent?.guardian) ? targetStudent?.guardian[0] : targetStudent?.guardian
+        setReceiptData({
+          orderNumber: Math.floor(1000 + Math.random() * 9000),
+          clientName: `Atleta: ${res.studentName || targetStudent?.name}`,
+          items: currentCart.map((i) => ({
+            name: i.name,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+            totalPrice: i.quantity * i.unitPrice,
+          })),
+          totalAmount: currentTotal,
+          paymentMethod: 'prepaid_wallet',
+          guardianPhone: res.guardianPhone || guardian?.phone,
+          studentBalanceBefore: res.previousBalance,
+          studentBalanceAfter: res.remainingBalance,
+        })
         setFeedback({
           type: 'success',
           message: `Lanche debitado com sucesso da carteira do atleta! Saldo restante: ${fmt(res.remainingBalance || 0)}`,
@@ -182,6 +230,7 @@ export function PdvClient({ products, openTabs, students }: Props) {
         setCart([])
         setCheckoutMode('none')
       } else {
+        playAlert()
         setFeedback({ type: 'error', message: res.error || 'Erro ao debitar carteira.' })
       }
     })
@@ -647,15 +696,24 @@ export function PdvClient({ products, openTabs, students }: Props) {
 
               <div className="max-h-44 overflow-y-auto space-y-1.5">
                 {filteredStudents.map((st) => {
-                  const balance = Array.isArray(st.wallet) ? st.wallet[0]?.balance ?? 0 : st.wallet?.balance ?? 0
+                  const wallet = Array.isArray(st.wallet) ? st.wallet[0] : st.wallet
+                  const balance = wallet?.balance ?? 0
                   const isSelected = selectedStudentId === st.id
+                  const medical = Array.isArray(st.medical) ? st.medical[0] : st.medical
+                  const hasAllergy = !!medical?.allergies
 
                   return (
                     <label
                       key={st.id}
+                      onClick={() => {
+                        setSelectedStudentId(st.id)
+                        if (hasAllergy) playAlert()
+                      }}
                       className={`p-2.5 rounded border flex items-center justify-between text-xs cursor-pointer transition-all ${
                         isSelected
-                          ? 'bg-purple-50 border-purple-500 dark:bg-purple-950/40 dark:border-purple-500'
+                          ? hasAllergy
+                            ? 'bg-red-50 border-red-500 dark:bg-red-950/40 dark:border-red-500'
+                            : 'bg-purple-50 border-purple-500 dark:bg-purple-950/40 dark:border-purple-500'
                           : 'bg-[var(--bg-subtle)] border-[var(--border-color)]'
                       }`}
                     >
@@ -664,10 +722,20 @@ export function PdvClient({ products, openTabs, students }: Props) {
                           type="radio"
                           name="studentRadio"
                           checked={isSelected}
-                          onChange={() => setSelectedStudentId(st.id)}
-                          className="text-purple-600"
+                          onChange={() => {
+                            setSelectedStudentId(st.id)
+                            if (hasAllergy) playAlert()
+                          }}
+                          className={hasAllergy ? 'text-red-600' : 'text-purple-600'}
                         />
-                        <span className="font-bold text-[var(--text-primary)]">{st.name}</span>
+                        <div>
+                          <span className="font-bold text-[var(--text-primary)]">{st.name}</span>
+                          {hasAllergy && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+                              ⚠️ Alergia
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span
                         className={`font-mono font-bold ${
@@ -681,6 +749,71 @@ export function PdvClient({ products, openTabs, students }: Props) {
                 })}
               </div>
             </div>
+
+            {/* CARD 1: ALERTA VERMELHO DE ALERGIA / RESTRIÇÃO ALIMENTAR */}
+            {(() => {
+              const target = students.find((s) => s.id === selectedStudentId)
+              const med = Array.isArray(target?.medical) ? target?.medical[0] : target?.medical
+              if (!med?.allergies) return null
+
+              return (
+                <div className="p-3.5 rounded bg-red-50 dark:bg-red-950/50 border-2 border-red-500 text-red-800 dark:text-red-200 animate-pulse space-y-1">
+                  <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wider text-red-600 dark:text-red-400">
+                    <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+                    <span>🚨 ALERTA MÉDICO / RESTRIÇÃO ALIMENTAR</span>
+                  </div>
+                  <div className="pl-7 space-y-0.5 text-xs">
+                    <p className="font-bold">
+                      Restrição: <span className="underline">{med.allergies}</span>
+                    </p>
+                    {med.medical_notes && (
+                      <p className="text-[11px] opacity-90">{med.medical_notes}</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* CARD 2: STATUS DO LIMITE DIÁRIO */}
+            {(() => {
+              const target = students.find((s) => s.id === selectedStudentId)
+              const wal = Array.isArray(target?.wallet) ? target?.wallet[0] : target?.wallet
+              const limit = wal?.daily_limit ? Number(wal.daily_limit) : null
+              const spent = Number(target?.spentToday || 0)
+              if (!limit || limit <= 0) return null
+
+              const isExceeded = spent + cartTotal > limit
+              const remainingDaily = Math.max(0, limit - spent)
+
+              return (
+                <div
+                  className={`p-3 rounded border text-xs space-y-1.5 ${
+                    isExceeded
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 text-amber-950 dark:text-amber-200'
+                      : 'bg-[var(--bg-subtle)] border-[var(--border-color)]'
+                  }`}
+                >
+                  <div className="flex justify-between items-center font-bold">
+                    <span className="flex items-center gap-1">
+                      <Gauge className="w-3.5 h-3.5 text-amber-500" />
+                      Trava de Limite Diário (Pais):
+                    </span>
+                    <span className="font-mono">{fmt(limit)} / dia</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                    <span>Gasto hoje: {fmt(spent)}</span>
+                    <span className={remainingDaily < cartTotal ? 'font-bold text-amber-600' : ''}>
+                      Disponível hoje: {fmt(remainingDaily)}
+                    </span>
+                  </div>
+                  {isExceeded && (
+                    <p className="text-[11px] font-bold text-red-600 dark:text-red-400 pt-0.5">
+                      ⚠️ Bloqueio de Segurança: O valor deste lanche ({fmt(cartTotal)}) somado ao consumo de hoje ({fmt(spent)}) ultrapassa o limite diário de {fmt(limit)} configurado pelos responsáveis!
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* Resumo do Débito */}
             <div className="p-3 bg-[var(--bg-subtle)] rounded border border-[var(--border-color)] space-y-1 text-xs">
@@ -706,6 +839,7 @@ export function PdvClient({ products, openTabs, students }: Props) {
               </div>
             </div>
 
+            {/* Botões do Modal */}
             <div className="pt-2 flex items-center justify-between">
               <button
                 onClick={() => setCheckoutMode('none')}
@@ -714,18 +848,44 @@ export function PdvClient({ products, openTabs, students }: Props) {
                 Cancelar
               </button>
 
-              <button
-                onClick={handleFinalizeAluno}
-                disabled={isPending || studentWalletBalance < cartTotal}
-                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs flex items-center gap-1.5"
-              >
-                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                Confirmar Débito
-              </button>
+              {(() => {
+                const target = students.find((s) => s.id === selectedStudentId)
+                const wal = Array.isArray(target?.wallet) ? target?.wallet[0] : target?.wallet
+                const limit = wal?.daily_limit ? Number(wal.daily_limit) : null
+                const spent = Number(target?.spentToday || 0)
+                const isLimitExceeded = Boolean(limit && limit > 0 && spent + cartTotal > limit)
+                const isInsufficient = studentWalletBalance < cartTotal
+
+                return (
+                  <button
+                    onClick={handleFinalizeAluno}
+                    disabled={Boolean(isPending || isInsufficient || isLimitExceeded)}
+                    className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    {isLimitExceeded
+                      ? 'Limite Diário Excedido'
+                      : isInsufficient
+                      ? 'Saldo Insuficiente'
+                      : 'Confirmar Débito'}
+                  </button>
+                )
+              })()}
             </div>
           </div>
         </div>
       )}
+
+      {/* MODAL DE CUPOM TÉRMICO (80mm) & WHATSAPP */}
+      <ThermalReceiptModal
+        isOpen={!!receiptData}
+        onClose={() => setReceiptData(null)}
+        data={receiptData}
+      />
     </div>
   )
 }

@@ -1,9 +1,0 @@
-{
-  "/_global-error/page": "app/_global-error/page.js",
-  "/_not-found/page": "app/_not-found/page.js",
-  "/caixa/page": "app/caixa/page.js",
-  "/carteira-alunos/page": "app/carteira-alunos/page.js",
-  "/comandas/page": "app/comandas/page.js",
-  "/page": "app/page.js",
-  "/produtos/page": "app/produtos/page.js"
-}

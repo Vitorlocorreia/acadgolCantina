@@ -13,8 +13,14 @@ import {
   ArrowUpRight,
   Loader2,
   Clock,
+  ShieldAlert,
+  Gauge,
+  Edit2,
+  Check,
+  X,
 } from 'lucide-react'
 import { depositStudentWalletAction } from '../actions'
+import { updateDailyLimitAction } from './actions'
 
 interface Props {
   students: any[]
@@ -31,6 +37,11 @@ export function CarteiraClient({ students, transactions }: Props) {
   const [selectedStudent, setSelectedStudent] = useState<any | null>(null)
   const [depositAmount, setDepositAmount] = useState<number>(50.00)
   const [feedback, setFeedback] = useState<string | null>(null)
+
+  // Modal de Limite Diário
+  const [limitModalStudent, setLimitModalStudent] = useState<any | null>(null)
+  const [newLimitValue, setNewLimitValue] = useState<string>('20.00')
+  const [isUnlimited, setIsUnlimited] = useState<boolean>(false)
 
   const filteredStudents = students.filter((st) =>
     st.name.toLowerCase().includes(search.toLowerCase())
@@ -52,10 +63,39 @@ export function CarteiraClient({ students, transactions }: Props) {
     })
   }
 
+  const openLimitModal = (student: any) => {
+    setLimitModalStudent(student)
+    const wallet = Array.isArray(student.wallet) ? student.wallet[0] : student.wallet
+    if (wallet?.daily_limit !== null && wallet?.daily_limit !== undefined) {
+      setNewLimitValue(String(wallet.daily_limit))
+      setIsUnlimited(false)
+    } else {
+      setNewLimitValue('20.00')
+      setIsUnlimited(true)
+    }
+  }
+
+  const handleSaveDailyLimit = () => {
+    if (!limitModalStudent) return
+    const limit = isUnlimited ? null : parseFloat(newLimitValue) || null
+
+    startTransition(async () => {
+      const res = await updateDailyLimitAction(limitModalStudent.id, limit)
+      if (res.success) {
+        setFeedback(
+          limit
+            ? `Limite diário do atleta ${limitModalStudent.name} fixado em ${fmt(limit)}!`
+            : `Limite diário do atleta ${limitModalStudent.name} removido (livre)!`
+        )
+        setLimitModalStudent(null)
+      }
+    })
+  }
+
   return (
     <div className="space-y-6">
       {feedback && (
-        <div className="p-3.5 rounded bg-[#C8E6C9]/60 border border-[#1A6B2E]/30 text-[#0D4A1C] text-xs font-bold flex items-center justify-between shadow-2xs">
+        <div className="p-3.5 rounded bg-[#C8E6C9]/60 border border-[#1A6B2E]/30 text-[#0D4A1C] text-xs font-bold flex items-center justify-between shadow-2xs animate-in fade-in">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-[#1A6B2E]" />
             <span>{feedback}</span>
@@ -119,41 +159,64 @@ export function CarteiraClient({ students, transactions }: Props) {
               <table className="w-full text-left text-xs">
                 <thead className="bg-[var(--bg-subtle)] border-b border-[var(--border-color)] text-slate-500 uppercase tracking-wider font-bold">
                   <tr>
-                    <th className="px-5 py-3">Atleta</th>
-                    <th className="px-5 py-3">Responsável</th>
-                    <th className="px-5 py-3 text-right">Saldo Atual</th>
-                    <th className="px-5 py-3 text-right">Ações</th>
+                    <th className="px-4 py-3">Atleta</th>
+                    <th className="px-4 py-3">Alergias / Restrições</th>
+                    <th className="px-4 py-3">Limite Diário</th>
+                    <th className="px-4 py-3 text-right">Saldo Atual</th>
+                    <th className="px-4 py-3 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-color)]">
                   {filteredStudents.map((st) => {
-                    const balance = Array.isArray(st.wallet) ? st.wallet[0]?.balance ?? 0 : st.wallet?.balance ?? 0
+                    const wallet = Array.isArray(st.wallet) ? st.wallet[0] : st.wallet
+                    const balance = wallet?.balance ?? 0
+                    const dailyLimit = wallet?.daily_limit
+                    const medical = Array.isArray(st.medical) ? st.medical[0] : st.medical
+                    const allergies = medical?.allergies
                     const guardian = Array.isArray(st.guardian) ? st.guardian[0] : st.guardian
                     const guardianPhone = guardian?.phone ? guardian.phone.replace(/\D/g, '') : ''
 
-                    const whatsappMsg = `Olá ${guardian?.name || 'Responsável'}! Aqui é da Cantina da Academia do Gol. O saldo atual do atleta *${st.name}* para lanches pós-treino é de *${fmt(balance)}*. Gostaria de fazer uma recarga via PIX? Chave PIX: cantina@academiadogol.com.br`
+                    const whatsappMsg = `Olá ${guardian?.name || 'Responsável'}! Aqui é da Cantina da Academia do Gol. O saldo atual do atleta *${st.name}* para lanches pós-treino é de *${fmt(balance)}*. Gostaria de fazer uma recarga via PIX? Chave PIX: 81985742015 (Academia do Gol)`
 
                     return (
                       <tr key={st.id} className="hover:bg-[var(--bg-subtle)] transition-colors">
-                        <td className="px-5 py-3.5">
+                        <td className="px-4 py-3.5">
                           <div className="font-bold text-[var(--text-primary)]">{st.name}</div>
                           <span className="text-[10px] text-slate-400 font-mono">
-                            {st.preferred_position}
+                            {st.preferred_position} • {guardian?.name || 'Responsável'}
                           </span>
                         </td>
 
-                        <td className="px-5 py-3.5 text-slate-600 dark:text-slate-400">
-                          <div>{guardian?.name || '—'}</div>
-                          {guardian?.phone && (
-                            <span className="text-[10px] text-slate-400 font-mono">{guardian.phone}</span>
+                        {/* Coluna Alergias */}
+                        <td className="px-4 py-3.5">
+                          {allergies ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-900">
+                              <ShieldAlert className="w-3 h-3 text-red-600" />
+                              {allergies}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">Nenhuma</span>
                           )}
                         </td>
 
-                        <td className="px-5 py-3.5 text-right font-mono font-bold text-base text-purple-600 dark:text-purple-400">
+                        {/* Coluna Limite Diário com Botão de Edição */}
+                        <td className="px-4 py-3.5">
+                          <button
+                            onClick={() => openLimitModal(st)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 border border-[var(--border-color)] transition-colors cursor-pointer"
+                            title="Alterar limite diário configurado pelos pais"
+                          >
+                            <Gauge className="w-3 h-3 text-amber-500" />
+                            {dailyLimit ? `${fmt(dailyLimit)}/dia` : 'Sem limite'}
+                            <Edit2 className="w-2.5 h-2.5 opacity-60 ml-0.5" />
+                          </button>
+                        </td>
+
+                        <td className="px-4 py-3.5 text-right font-mono font-bold text-base text-purple-600 dark:text-purple-400">
                           {fmt(balance)}
                         </td>
 
-                        <td className="px-5 py-3.5 text-right">
+                        <td className="px-4 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             {guardianPhone && (
                               <a
@@ -230,7 +293,7 @@ export function CarteiraClient({ students, transactions }: Props) {
         </div>
       </div>
 
-      {/* MODAL DE RECARGA DE SALDO */}
+      {/* MODAL 1: RECARGA DE SALDO */}
       {selectedStudent && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="card-app bg-[var(--bg-card)] max-w-md w-full p-6 space-y-4 shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-150">
@@ -239,7 +302,7 @@ export function CarteiraClient({ students, transactions }: Props) {
                 <h3 className="font-bebas text-2xl text-[var(--text-primary)] tracking-wider leading-none">
                   Recarga de Saldo — {selectedStudent.name}
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Adicione crédito para lanches na cantina</p>
+                <p className="text-xs text-slate-500 mt-0.5">Adicionar crédito pré-pago para consumo de lanche</p>
               </div>
               <button
                 onClick={() => setSelectedStudent(null)}
@@ -249,44 +312,54 @@ export function CarteiraClient({ students, transactions }: Props) {
               </button>
             </div>
 
-            {/* Sugestões de Valores Rápidos */}
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                Valores Sugeridos:
+            <div className="space-y-3">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Selecione ou digite o valor da recarga:
               </label>
-              <div className="grid grid-cols-4 gap-2">
-                {[30, 50, 100, 150].map((v) => (
+
+              <div className="grid grid-cols-3 gap-2">
+                {[20, 50, 100].map((val) => (
                   <button
-                    key={v}
+                    key={val}
                     type="button"
-                    onClick={() => setDepositAmount(v)}
-                    className={`py-2 rounded font-bebas text-lg border transition-all ${
-                      depositAmount === v
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                        : 'bg-[var(--bg-subtle)] border-[var(--border-color)] text-[var(--text-primary)]'
+                    onClick={() => setDepositAmount(val)}
+                    className={`py-2 rounded border font-bebas text-lg cursor-pointer transition-all ${
+                      depositAmount === val
+                        ? 'bg-purple-600 text-white border-purple-600'
+                        : 'bg-[var(--bg-subtle)] border-[var(--border-color)] text-slate-700 dark:text-slate-300'
                     }`}
                   >
-                    R$ {v}
+                    R$ {val},00
                   </button>
                 ))}
               </div>
+
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs text-slate-400">
+                  R$
+                </span>
+                <input
+                  type="number"
+                  step="5"
+                  min="5"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(parseFloat(e.target.value) || 0)}
+                  className="input-app pl-8 font-mono text-base font-bold"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Outro Valor (R$):
-              </label>
-              <input
-                type="number"
-                step="5.00"
-                min="5.00"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(parseFloat(e.target.value) || 0)}
-                className="input-app font-bebas text-2xl h-12 text-center text-purple-600"
-              />
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded border border-purple-200 dark:border-purple-900 text-xs text-purple-900 dark:text-purple-300 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold">
+                <QrCode className="w-4 h-4 text-purple-600" />
+                <span>Confirmar recebimento do PIX</span>
+              </div>
+              <p className="text-[11px] opacity-90">
+                O saldo estará disponível imediatamente para o atleta comprar lanches no balcão da cantina.
+              </p>
             </div>
 
-            <div className="pt-2 flex items-center justify-between border-t border-[var(--border-color)]">
+            <div className="pt-2 flex items-center justify-between">
               <button
                 onClick={() => setSelectedStudent(null)}
                 className="px-4 py-2 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded text-xs font-bold uppercase"
@@ -297,10 +370,108 @@ export function CarteiraClient({ students, transactions }: Props) {
               <button
                 onClick={handleDeposit}
                 disabled={isPending || depositAmount <= 0}
-                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs flex items-center gap-1.5"
+                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
-                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                 Confirmar Recarga ({fmt(depositAmount)})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CONFIGURAR LIMITE DIÁRIO POR CRIANÇA */}
+      {limitModalStudent && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="card-app bg-[var(--bg-card)] max-w-md w-full p-6 space-y-4 shadow-2xl border border-[var(--border-color)] animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center font-bold">
+                  <Gauge className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bebas text-2xl text-[var(--text-primary)] tracking-wider leading-none">
+                    Trava de Limite Diário
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{limitModalStudent.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setLimitModalStudent(null)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Defina o teto máximo que o atleta pode gastar na cantina por dia, conforme acordado com os pais:
+            </p>
+
+            {/* Opções Pré-Definidas */}
+            <div className="grid grid-cols-4 gap-2">
+              {[15, 20, 30, 50].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    setNewLimitValue(String(val))
+                    setIsUnlimited(false)
+                  }}
+                  className={`py-2 rounded border font-bebas text-base cursor-pointer transition-all ${
+                    !isUnlimited && parseFloat(newLimitValue) === val
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-[var(--bg-subtle)] border-[var(--border-color)] text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  R$ {val}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                Valor Personalizado (R$/dia):
+              </label>
+              <input
+                type="number"
+                step="1"
+                min="5"
+                disabled={isUnlimited}
+                value={newLimitValue}
+                onChange={(e) => setNewLimitValue(e.target.value)}
+                className="input-app font-mono text-base font-bold disabled:opacity-40"
+              />
+            </div>
+
+            {/* Checkbox Sem Limite */}
+            <label className="flex items-center gap-2 p-3 rounded bg-[var(--bg-subtle)] border border-[var(--border-color)] cursor-pointer text-xs">
+              <input
+                type="checkbox"
+                checked={isUnlimited}
+                onChange={(e) => setIsUnlimited(e.target.checked)}
+                className="rounded text-amber-500"
+              />
+              <span className="font-bold text-[var(--text-primary)]">
+                Sem Limite Diário (Consumo livre até zerar saldo)
+              </span>
+            </label>
+
+            <div className="pt-2 flex items-center justify-between border-t border-[var(--border-color)]">
+              <button
+                onClick={() => setLimitModalStudent(null)}
+                className="px-4 py-2 bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-slate-300 rounded text-xs font-bold uppercase"
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={handleSaveDailyLimit}
+                disabled={isPending}
+                className="px-6 py-2.5 bg-[#1A6B2E] hover:bg-[#0D4A1C] dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Salvar Limite
               </button>
             </div>
           </div>

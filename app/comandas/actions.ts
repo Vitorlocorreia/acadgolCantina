@@ -8,7 +8,7 @@ export async function getTabsList() {
 
   const { data, error } = await supabase
     .from('canteen_tabs')
-    .select('*, items:canteen_tab_items(*)')
+    .select('*, items:canteen_tab_items(*), payments:canteen_tab_payments(*)')
     .order('created_at', { ascending: false })
 
   if (error) {

@@ -7,7 +7,10 @@ import { revalidatePath } from 'next/cache'
 export async function getCanteenData() {
   const supabase = createAdminClient()
 
-  const [productsRes, tabsRes, studentsRes, salesRes] = await Promise.all([
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+
+  const [productsRes, tabsRes, studentsRes, salesRes, todayPurchasesRes] = await Promise.all([
     supabase
       .from('canteen_products')
       .select('*')
@@ -16,12 +19,12 @@ export async function getCanteenData() {
       .order('name', { ascending: true }),
     supabase
       .from('canteen_tabs')
-      .select('*, items:canteen_tab_items(*)')
+      .select('*, items:canteen_tab_items(*), payments:canteen_tab_payments(*)')
       .eq('status', 'open')
       .order('created_at', { ascending: false }),
     supabase
       .from('students')
-      .select('id, name, uniform_size, status, wallet:student_wallets(*), guardian:guardians(name, phone)')
+      .select('id, name, uniform_size, status, wallet:student_wallets(*), guardian:guardians(name, phone), medical:medical_records(allergies, medical_notes)')
       .eq('status', 'active')
       .order('name', { ascending: true }),
     supabase
@@ -29,12 +32,30 @@ export async function getCanteenData() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase
+      .from('wallet_transactions')
+      .select('student_id, amount')
+      .eq('type', 'purchase')
+      .gte('created_at', todayStart.toISOString()),
   ])
+
+  // Calcula quanto cada aluno já consumiu hoje
+  const todaySpentByStudent: Record<string, number> = {}
+  for (const tx of todayPurchasesRes.data || []) {
+    if (tx.student_id) {
+      todaySpentByStudent[tx.student_id] = (todaySpentByStudent[tx.student_id] || 0) + Number(tx.amount || 0)
+    }
+  }
+
+  const enrichedStudents = (studentsRes.data || []).map((st: any) => ({
+    ...st,
+    spentToday: todaySpentByStudent[st.id] || 0,
+  }))
 
   return {
     products: productsRes.data ?? [],
     openTabs: tabsRes.data ?? [],
-    students: studentsRes.data ?? [],
+    students: enrichedStudents,
     recentSales: salesRes.data ?? [],
   }
 }
@@ -175,13 +196,13 @@ export async function createTabAction(
   return { success: true, tab }
 }
 
-// 5. Fechar Comanda
+// 5. Fechar Comanda (Total ou Saldo Restante)
 export async function closeTabAction(tabId: string, paymentMethod: string) {
   const supabase = createAdminClient()
 
   const { data: tab } = await supabase
     .from('canteen_tabs')
-    .select('*, items:canteen_tab_items(*)')
+    .select('*, items:canteen_tab_items(*), payments:canteen_tab_payments(*)')
     .eq('id', tabId)
     .single()
 
@@ -189,24 +210,36 @@ export async function closeTabAction(tabId: string, paymentMethod: string) {
     return { success: false, error: 'Comanda não encontrada.' }
   }
 
-  // Atualiza comanda para fechada
+  const alreadyPaid = Number(tab.paid_amount || 0)
+  const remaining = Math.max(0, Number(tab.total_amount) - alreadyPaid)
+
+  // Se houver saldo restante a pagar, registra pagamento final
+  if (remaining > 0) {
+    await supabase.from('canteen_tab_payments').insert({
+      tab_id: tabId,
+      amount: remaining,
+      payment_method: paymentMethod,
+    })
+
+    const itemsSummary = (tab.items || []).map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')
+    await supabase.from('canteen_sales').insert({
+      tab_id: tabId,
+      client_name: `Comanda #${tab.tab_number} - ${tab.client_name}`,
+      total_amount: remaining,
+      payment_method: paymentMethod,
+      items_summary: itemsSummary || 'Quitação final da comanda',
+    })
+  }
+
+  // Atualiza comanda para fechada com paid_amount = total_amount
   await supabase
     .from('canteen_tabs')
     .update({
       status: 'closed',
+      paid_amount: tab.total_amount,
       closed_at: new Date().toISOString(),
     })
     .eq('id', tabId)
-
-  // Registra no Caixa
-  const itemsSummary = (tab.items || []).map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ')
-  await supabase.from('canteen_sales').insert({
-    tab_id: tabId,
-    client_name: `Comanda #${tab.tab_number} - ${tab.client_name}`,
-    total_amount: tab.total_amount,
-    payment_method: paymentMethod,
-    items_summary: itemsSummary || 'Itens da comanda',
-  })
 
   revalidatePath('/')
   revalidatePath('/comandas')
@@ -214,7 +247,7 @@ export async function closeTabAction(tabId: string, paymentMethod: string) {
   return { success: true }
 }
 
-// 6. Debitar Saldo da Carteira do Aluno da Escolinha
+// 6. Debitar Saldo da Carteira do Aluno da Escolinha (com Trava de Limite Diário)
 export async function chargeStudentWalletAction(
   studentId: string,
   items: { productId: string; name: string; quantity: number; unitPrice: number }[],
@@ -238,11 +271,34 @@ export async function chargeStudentWalletAction(
     wallet = newWallet
   }
 
+  // TRAVA DE LIMITE DIÁRIO
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const { data: todayPurchases } = await supabase
+    .from('wallet_transactions')
+    .select('amount')
+    .eq('student_id', studentId)
+    .eq('type', 'purchase')
+    .gte('created_at', todayStart.toISOString())
+
+  const spentToday = (todayPurchases || []).reduce((acc, t) => acc + Number(t.amount || 0), 0)
+  const dailyLimitNum = wallet.daily_limit ? Number(wallet.daily_limit) : null
+
+  if (dailyLimitNum && dailyLimitNum > 0) {
+    if (spentToday + totalAmount > dailyLimitNum) {
+      const remainingToday = Math.max(0, dailyLimitNum - spentToday)
+      return {
+        success: false,
+        error: `⚠️ Limite Diário Excedido! O atleta já consumiu R$ ${spentToday.toFixed(2).replace('.', ',')} hoje. Limite configurado pelos pais: R$ ${dailyLimitNum.toFixed(2).replace('.', ',')} (Disponível hoje: R$ ${remainingToday.toFixed(2).replace('.', ',')}).`,
+      }
+    }
+  }
+
   const currentBalance = Number(wallet?.balance || 0)
   if (currentBalance < totalAmount) {
     return {
       success: false,
-      error: `Saldo insuficiente! Saldo atual do aluno: R$ ${currentBalance.toFixed(2)}. Valor do lanche: R$ ${totalAmount.toFixed(2)}.`,
+      error: `Saldo insuficiente! Saldo atual do aluno: R$ ${currentBalance.toFixed(2).replace('.', ',')}. Valor do lanche: R$ ${totalAmount.toFixed(2).replace('.', ',')}.`,
     }
   }
 
@@ -304,7 +360,13 @@ export async function chargeStudentWalletAction(
   revalidatePath('/carteira-alunos')
   revalidatePath('/caixa')
   revalidatePath('/produtos')
-  return { success: true, remainingBalance: nextBalance }
+  return {
+    success: true,
+    previousBalance: currentBalance,
+    remainingBalance: nextBalance,
+    studentName: student?.name,
+    guardianPhone: guardian?.phone,
+  }
 }
 
 // 7. Recarregar Saldo do Aluno (Feito pelo Pai no PIX ou na Secretaria)
@@ -390,3 +452,115 @@ export async function createProductAction(formData: FormData) {
   revalidatePath('/produtos')
   revalidatePath('/')
 }
+
+// 10. Pagamento Parcial / Múltiplo de Comanda
+export async function payTabPartialAction(
+  tabId: string,
+  amount: number,
+  paymentMethod: string,
+  payerName?: string
+) {
+  const supabase = createAdminClient()
+
+  const { data: tab } = await supabase
+    .from('canteen_tabs')
+    .select('*')
+    .eq('id', tabId)
+    .single()
+
+  if (!tab) {
+    return { success: false, error: 'Comanda não encontrada.' }
+  }
+
+  const currentPaid = Number(tab.paid_amount || 0)
+  const remaining = Number(tab.total_amount) - currentPaid
+
+  if (amount <= 0 || amount > remaining) {
+    return {
+      success: false,
+      error: `Valor inválido! Restam R$ ${remaining.toFixed(2).replace('.', ',')} a pagar.`,
+    }
+  }
+
+  // Registra pagamento parcial
+  const { error: payErr } = await supabase.from('canteen_tab_payments').insert({
+    tab_id: tabId,
+    amount: amount,
+    payment_method: paymentMethod,
+  })
+
+  if (payErr) {
+    return { success: false, error: payErr.message }
+  }
+
+  // Registra no Caixa
+  await supabase.from('canteen_sales').insert({
+    tab_id: tabId,
+    client_name: `Comanda #${tab.tab_number} - ${payerName || tab.client_name} (Parcial)`,
+    total_amount: amount,
+    payment_method: paymentMethod,
+    items_summary: `Pagamento Parcial via ${paymentMethod.toUpperCase()} da Comanda #${tab.tab_number}`,
+  })
+
+  const newPaid = currentPaid + amount
+  const isFullyPaid = newPaid >= Number(tab.total_amount)
+
+  await supabase
+    .from('canteen_tabs')
+    .update({
+      paid_amount: newPaid,
+      status: isFullyPaid ? 'closed' : 'open',
+      closed_at: isFullyPaid ? new Date().toISOString() : null,
+    })
+    .eq('id', tabId)
+
+  revalidatePath('/')
+  revalidatePath('/comandas')
+  revalidatePath('/caixa')
+  return {
+    success: true,
+    isFullyPaid,
+    remaining: Math.max(0, Number(tab.total_amount) - newPaid),
+  }
+}
+
+// 11. Atualizar Limite Diário do Aluno (Configurado pelos Pais)
+export async function updateStudentDailyLimitAction(
+  studentId: string,
+  dailyLimit: number | null
+) {
+  const supabase = createAdminClient()
+
+  let { data: wallet } = await supabase
+    .from('student_wallets')
+    .select('id')
+    .eq('student_id', studentId)
+    .single()
+
+  if (!wallet) {
+    await supabase.from('student_wallets').insert({
+      student_id: studentId,
+      balance: 0,
+      daily_limit: dailyLimit,
+    })
+  } else {
+    await supabase
+      .from('student_wallets')
+      .update({
+        daily_limit: dailyLimit,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', wallet.id)
+  }
+
+  revalidatePath('/carteira-alunos')
+  revalidatePath('/')
+  return { success: true }
+}
+
+// 12. Disparo de Cupom Térmico Digital via WhatsApp
+export async function sendReceiptWhatsAppAction(phone: string, receiptText: string) {
+  const { sendEvolutionWhatsApp } = await import('@/lib/whatsapp/evolution')
+  return await sendEvolutionWhatsApp({ phone, message: receiptText })
+}
+
