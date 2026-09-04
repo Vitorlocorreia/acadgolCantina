@@ -262,14 +262,27 @@ export async function chargeStudentWalletAction(
     description: `Consumo Cantina: ${itemsSummary}`,
   })
 
-  // Registra venda no Caixa
-  const { data: student } = await supabase.from('students').select('name').eq('id', studentId).single()
+  // Registra venda no Caixa e busca responsável para notificação
+  const { data: student } = await supabase
+    .from('students')
+    .select('name, guardian:guardians(name, phone)')
+    .eq('id', studentId)
+    .single()
+
   await supabase.from('canteen_sales').insert({
     client_name: `Aluno: ${student?.name || 'Escolinha'}`,
     total_amount: totalAmount,
     payment_method: 'prepaid_wallet',
     items_summary: itemsSummary,
   })
+
+  // Disparo automático do extrato de lanche no WhatsApp do pai
+  const guardian = Array.isArray(student?.guardian) ? student?.guardian[0] : student?.guardian
+  if (guardian?.phone) {
+    const { sendEvolutionWhatsApp } = await import('@/lib/whatsapp/evolution')
+    const msg = `🥪 *Cantina Academia do Gol — Extrato de Lanche*\n\nOlá ${guardian.name || 'Responsável'}! O atleta *${student?.name}* acabou de lanchar:\n\n• ${itemsSummary}\n*Total debitado:* R$ ${totalAmount.toFixed(2).replace('.', ',')}\n*Saldo restante:* R$ ${nextBalance.toFixed(2).replace('.', ',')}\n\n_Comprovante digital emitido pela Cantina do Gol_`
+    await sendEvolutionWhatsApp({ phone: guardian.phone, message: msg }).catch(() => {})
+  }
 
   // Abate estoque
   for (const item of items) {
